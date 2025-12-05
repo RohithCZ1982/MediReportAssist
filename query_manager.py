@@ -17,7 +17,10 @@ class QueryManager:
             'diet': ['food', 'diet', 'eat', 'drink', 'avoid', 'restriction', 'meal', 'nutrition'],
             'activity': ['activity', 'exercise', 'rest', 'work', 'physical', 'movement', 'walk', 'lift'],
             'symptoms': ['symptom', 'pain', 'fever', 'bleeding', 'infection', 'complication', 'warning'],
-            'follow_up': ['appointment', 'follow-up', 'doctor', 'visit', 'check-up', 'return']
+            'follow_up': ['appointment', 'follow-up', 'doctor', 'visit', 'check-up', 'return'],
+            'lab_results': ['lab', 'laboratory', 'test result', 'blood test', 'lab value', 'test report', 'cbc', 'glucose', 'cholesterol', 'creatinine', 'hemoglobin', 'wbc', 'rbc', 'platelet', 'normal', 'abnormal', 'high', 'low', 'reference range'],
+            'imaging': ['x-ray', 'xray', 'ct scan', 'mri', 'ultrasound', 'imaging', 'scan', 'radiograph', 'findings', 'impression', 'mammogram'],
+            'test_report': ['test report', 'lab report', 'imaging report', 'diagnostic', 'results', 'test results', 'report']
         }
         
         # Vague query patterns
@@ -114,11 +117,17 @@ class QueryManager:
         if 'follow_up' in detected_categories or not detected_categories:
             questions.append("Are you asking about follow-up appointments or when to see your doctor?")
         
+        if 'lab_results' in detected_categories or 'test_report' in detected_categories:
+            questions.append("Are you asking about lab test results, values, or whether results are normal?")
+        
+        if 'imaging' in detected_categories:
+            questions.append("Are you asking about imaging test findings, results, or recommendations?")
+        
         # Add general clarification if no specific category detected
         if not detected_categories:
             questions.extend([
-                "What specific aspect of your discharge instructions would you like to know about?",
-                "For example: medication timing, dietary restrictions, activity guidelines, or follow-up care?"
+                "What specific aspect would you like to know about?",
+                "For example: medication timing, lab results, imaging findings, dietary restrictions, activity guidelines, or follow-up care?"
             ])
         
         # Limit to 3-4 questions

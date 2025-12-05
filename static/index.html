@@ -163,6 +163,28 @@
             cursor: not-allowed;
         }
 
+        .stop-btn {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+            display: none;
+            min-width: 80px;
+        }
+
+        .stop-btn:hover {
+            transform: translateY(-2px);
+            background: linear-gradient(135deg, #c82333 0%, #bd2130 100%);
+        }
+
+        .stop-btn.show {
+            display: inline-block;
+        }
+
         .answer-container {
             margin-top: 20px;
             padding: 20px;
@@ -302,6 +324,7 @@
                         disabled
                     >
                     <button class="query-btn" id="queryBtn" onclick="handleQuery()" disabled>Ask</button>
+                    <button class="stop-btn" id="stopBtn" onclick="stopQuery()">Stop</button>
                 </div>
 
                 <div class="example-queries">
@@ -336,6 +359,15 @@
     <script>
         const API_BASE = 'http://localhost:8000';
         let currentDocumentId = null;
+        let abortController = null;
+        
+        // Initialize stop button as hidden
+        document.addEventListener('DOMContentLoaded', () => {
+            const stopBtn = document.getElementById('stopBtn');
+            if (stopBtn) {
+                stopBtn.style.display = 'none';
+            }
+        });
 
         // File upload handling
         const uploadArea = document.getElementById('uploadArea');
@@ -409,13 +441,19 @@
             const clarificationBox = document.getElementById('clarificationBox');
             const clarificationQuestions = document.getElementById('clarificationQuestions');
             const sources = document.getElementById('sources');
+            const stopBtn = document.getElementById('stopBtn');
+
+            // Create new AbortController for this request
+            abortController = new AbortController();
 
             answerContainer.classList.add('show');
             answerText.textContent = 'Loading...';
             clarificationBox.style.display = 'none';
             sources.textContent = '';
             queryBtn.disabled = true;
+            queryInput.disabled = true;
             queryBtn.innerHTML = 'Asking... <span class="loading"></span>';
+            stopBtn.style.display = 'inline-block';
 
             try {
                 const response = await fetch(`${API_BASE}/query`, {
@@ -426,7 +464,8 @@
                     body: JSON.stringify({
                         query: query,
                         document_id: currentDocumentId
-                    })
+                    }),
+                    signal: abortController.signal
                 });
 
                 const data = await response.json();
@@ -453,10 +492,27 @@
                     throw new Error(data.detail || 'Query failed');
                 }
             } catch (error) {
-                answerText.textContent = `Error: ${error.message}`;
+                if (error.name === 'AbortError') {
+                    answerText.textContent = 'Query cancelled.';
+                } else {
+                    answerText.textContent = `Error: ${error.message}`;
+                }
             } finally {
                 queryBtn.disabled = false;
+                queryInput.disabled = false;
                 queryBtn.textContent = 'Ask';
+                stopBtn.style.display = 'none';
+                abortController = null;
+            }
+        }
+
+        function stopQuery() {
+            if (abortController) {
+                abortController.abort();
+                const answerText = document.getElementById('answerText');
+                if (answerText.textContent === 'Loading...') {
+                    answerText.textContent = 'Query cancelled.';
+                }
             }
         }
 
