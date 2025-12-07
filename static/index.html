@@ -607,6 +607,22 @@
                     body: formData
                 });
 
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    // Server returned HTML (likely an error page)
+                    const text = await response.text();
+                    console.error('Server returned non-JSON response:', text.substring(0, 200));
+                    
+                    if (response.status === 404) {
+                        throw new Error(`API endpoint not found. Make sure you're using the correct ngrok URL. Current: ${API_BASE}`);
+                    } else if (response.status >= 500) {
+                        throw new Error(`Server error (${response.status}). Check the server logs in Colab.`);
+                    } else {
+                        throw new Error(`Unexpected response format. Server returned HTML instead of JSON. Status: ${response.status}`);
+                    }
+                }
+
                 const data = await response.json();
 
                 if (response.ok) {
@@ -674,6 +690,22 @@
                     signal: abortController.signal
                 });
 
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    // Server returned HTML (likely an error page)
+                    const text = await response.text();
+                    console.error('Server returned non-JSON response:', text.substring(0, 200));
+                    
+                    if (response.status === 404) {
+                        throw new Error(`API endpoint not found. Make sure you're using the correct ngrok URL. Current: ${API_BASE}`);
+                    } else if (response.status >= 500) {
+                        throw new Error(`Server error (${response.status}). Check the server logs in Colab.`);
+                    } else {
+                        throw new Error(`Unexpected response format. Server returned HTML instead of JSON. Status: ${response.status}`);
+                    }
+                }
+
                 const data = await response.json();
 
                 if (response.ok) {
@@ -695,7 +727,7 @@
                         }
                     }
                 } else {
-                    throw new Error(data.detail || 'Query failed');
+                    throw new Error(data.detail || `Query failed with status ${response.status}`);
                 }
             } catch (error) {
                 if (error.name === 'AbortError') {
@@ -704,6 +736,8 @@
                     answerText.textContent = `Connection error: Cannot reach server. Please check:\n1. Server is running\n2. Correct URL (use ngrok URL if in Colab)\n3. Network connection\n\nCurrent API URL: ${API_BASE}`;
                 } else if (error.message.includes('timeout') || error.name === 'TimeoutError') {
                     answerText.textContent = `Request timed out. Server may be slow or unresponsive.`;
+                } else if (error.message.includes('not valid JSON') || error.message.includes('Unexpected token')) {
+                    answerText.textContent = `Server returned invalid response. This usually means:\n1. Wrong API URL (check ngrok URL in Colab)\n2. Server error (check Colab logs)\n3. CORS issue\n\nCurrent API URL: ${API_BASE}\n\nTry setting the correct ngrok URL using the button above.`;
                 } else {
                     answerText.textContent = `Error: ${error.message}`;
                 }
