@@ -67,12 +67,45 @@ class RAGSystemColab:
         # Initialize LLM
         print(f"Loading LLM model: {llm_model}...")
         self.llm_model_name = llm_model
+        self.use_groq = False
+        self.groq_client = None
+        self.groq_model = None
         self._load_llm(llm_model, use_8bit)
         
         print("✅ RAG System initialized successfully!")
     
     def _load_llm(self, model_name: str, use_8bit: bool = False):
-        """Load Hugging Face LLM model"""
+        """Load LLM model - supports Groq API (for Llama 3.2) or Hugging Face models"""
+        # Check if using Groq API (for Llama 3.2)
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        if groq_api_key and ("llama" in model_name.lower() or model_name.startswith("groq:")):
+            try:
+                from groq import Groq
+                self.groq_client = Groq(api_key=groq_api_key)
+                # Map model names to Groq model IDs
+                groq_model_map = {
+                    "llama3.2": "llama-3.2-3b-instruct",
+                    "llama-3.2": "llama-3.2-3b-instruct",
+                    "llama3-8b": "llama-3.1-8b-instruct",
+                    "llama3-70b": "llama-3.1-70b-versatile"
+                }
+                # Extract base model name
+                base_name = model_name.replace("groq:", "").lower()
+                self.groq_model = groq_model_map.get(base_name, "llama-3.2-3b-instruct")
+                self.use_groq = True
+                self.llm_pipeline = None  # Not needed for Groq
+                print(f"✅ Using Groq API with model: {self.groq_model}")
+                return
+            except ImportError:
+                print("⚠️ groq package not installed. Install with: pip install groq")
+                print("Falling back to Hugging Face model...")
+            except Exception as e:
+                print(f"⚠️ Error setting up Groq: {e}")
+                print("Falling back to Hugging Face model...")
+        
+        # Fallback to Hugging Face model
+        self.use_groq = False
+        self.groq_client = None
         try:
             # Load tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -331,6 +364,37 @@ INSTRUCTIONS:
 ANSWER:"""
         
         try:
+            # Use Groq API if available (for Llama 3.2)
+            if hasattr(self, 'use_groq') and self.use_groq and self.groq_client:
+                try:
+                    response = self.groq_client.chat.completions.create(
+                        model=self.groq_model,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "You are a specialized medical assistant helping patients understand their medical documents, including discharge instructions and test reports."
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ],
+                        temperature=0.3,
+                        max_tokens=512,
+                        top_p=0.9
+                    )
+                    
+                    answer = response.choices[0].message.content.strip()
+                    
+                    if not answer:
+                        return self._generate_fallback_answer(query, contexts)
+                    
+                    return answer
+                except Exception as e:
+                    print(f"Error with Groq API: {e}")
+                    return self._generate_fallback_answer(query, contexts)
+            
+            # Fallback to Hugging Face pipeline
             if self.llm_pipeline is None:
                 # Fallback to simple extraction
                 return self._generate_fallback_answer(query, contexts)
