@@ -358,17 +358,127 @@
 
     <script>
         // Auto-detect API base URL (works with ngrok and localhost)
-        const API_BASE = window.location.origin;
+        // Check for API URL in URL parameters first (e.g., ?api_url=https://xxx.ngrok-free.dev)
+        const urlParams = new URLSearchParams(window.location.search);
+        let API_BASE = urlParams.get('api_url') || window.location.origin;
+        
+        // Also check localStorage for saved API URL
+        const savedApiUrl = localStorage.getItem('api_base_url');
+        if (savedApiUrl && !urlParams.get('api_url')) {
+            API_BASE = savedApiUrl;
+        }
+        
+        // Save API URL to localStorage for future use
+        if (API_BASE !== window.location.origin) {
+            localStorage.setItem('api_base_url', API_BASE);
+        }
+        
         let currentDocumentId = null;
         let abortController = null;
         
-        // Initialize stop button as hidden
-        document.addEventListener('DOMContentLoaded', () => {
+        // Initialize stop button as hidden and test connection
+        document.addEventListener('DOMContentLoaded', async () => {
             const stopBtn = document.getElementById('stopBtn');
             if (stopBtn) {
                 stopBtn.style.display = 'none';
             }
+            
+            // Show current API URL in console
+            console.log('🔗 Using API URL:', API_BASE);
+            
+            // Test connection on page load
+            const connected = await testConnection();
+            
+            // If connection fails and we're using localhost, show prompt to set ngrok URL
+            if (!connected && API_BASE.includes('localhost')) {
+                showApiUrlPrompt();
+            }
         });
+        
+        // Function to prompt user for API URL if localhost fails
+        function showApiUrlPrompt() {
+            const uploadStatus = document.getElementById('uploadStatus');
+            if (uploadStatus) {
+                uploadStatus.className = 'upload-status error';
+                uploadStatus.style.display = 'block';
+                uploadStatus.innerHTML = `
+                    ✗ Cannot connect to localhost. If you're using Colab with ngrok:<br>
+                    1. Copy your ngrok URL from Colab (e.g., https://xxx.ngrok-free.dev)<br>
+                    2. Add it to the URL: <code>?api_url=YOUR_NGROK_URL</code><br>
+                    3. Or click <button onclick="promptApiUrl()" style="margin: 5px; padding: 5px 10px; cursor: pointer;">Set API URL</button>
+                `;
+            }
+        }
+        
+        // Function to manually set API URL
+        function promptApiUrl() {
+            const currentUrl = API_BASE;
+            const newUrl = prompt(
+                `Enter the API base URL (your ngrok URL):\n\nCurrent: ${currentUrl}\n\nExample: https://xxx.ngrok-free.dev`,
+                currentUrl
+            );
+            
+            if (newUrl && newUrl.trim()) {
+                // Remove trailing slash if present
+                const cleanUrl = newUrl.trim().replace(/\/$/, '');
+                API_BASE = cleanUrl;
+                localStorage.setItem('api_base_url', cleanUrl);
+                console.log('✅ API URL updated to:', cleanUrl);
+                
+                // Update URL without reload
+                const newUrlObj = new URL(window.location);
+                newUrlObj.searchParams.set('api_url', cleanUrl);
+                window.history.replaceState({}, '', newUrlObj);
+                
+                // Test connection again
+                testConnection();
+            }
+        }
+        
+        // Test API connection
+        async function testConnection() {
+            try {
+                // Create timeout manually for better browser compatibility
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                
+                const response = await fetch(`${API_BASE}/health`, {
+                    method: 'GET',
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                    console.log('✅ API connection successful');
+                    return true;
+                } else {
+                    throw new Error(`Server responded with status ${response.status}`);
+                }
+            } catch (error) {
+                console.error('❌ API connection failed:', error);
+                
+                // Show helpful error message
+                const uploadStatus = document.getElementById('uploadStatus');
+                if (uploadStatus) {
+                    uploadStatus.className = 'upload-status error';
+                    uploadStatus.style.display = 'block';
+                    
+                    if (error.name === 'TimeoutError' || error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION_REFUSED')) {
+                        uploadStatus.innerHTML = `✗ Cannot connect to server at ${API_BASE}<br><br>
+                            <strong>If using Colab with ngrok:</strong><br>
+                            1. Copy your ngrok URL from Colab output<br>
+                            2. Add <code>?api_url=YOUR_NGROK_URL</code> to this page's URL<br>
+                            3. Or click <button onclick="promptApiUrl()" style="margin: 5px; padding: 5px 10px; cursor: pointer; background: #667eea; color: white; border: none; border-radius: 4px;">Set API URL</button><br><br>
+                            <strong>Current API URL:</strong> <code>${API_BASE}</code>`;
+                    } else {
+                        uploadStatus.textContent = `✗ Connection error: ${error.message}`;
+                    }
+                }
+                
+                return false;
+            }
+        }
 
         // File upload handling
         const uploadArea = document.getElementById('uploadArea');
@@ -429,7 +539,21 @@
                 }
             } catch (error) {
                 uploadStatus.className = 'upload-status error';
-                uploadStatus.textContent = `✗ Error: ${error.message}`;
+                
+                // Provide more helpful error messages
+                if (error.message.includes('Failed to fetch') || error.name === 'TypeError' || error.message.includes('ERR_CONNECTION_REFUSED')) {
+                    uploadStatus.innerHTML = `✗ Failed to connect to server at ${API_BASE}<br><br>
+                        <strong>If using Colab with ngrok:</strong><br>
+                        1. Make sure you're using the ngrok URL, not localhost<br>
+                        2. Add <code>?api_url=YOUR_NGROK_URL</code> to this page's URL<br>
+                        3. Or click <button onclick="promptApiUrl()" style="margin: 5px; padding: 5px 10px; cursor: pointer; background: #667eea; color: white; border: none; border-radius: 4px;">Set API URL</button>`;
+                } else if (error.message.includes('timeout') || error.name === 'TimeoutError') {
+                    uploadStatus.textContent = `✗ Request timed out. Server may be slow or unresponsive.`;
+                } else {
+                    uploadStatus.textContent = `✗ Error: ${error.message}`;
+                }
+                
+                console.error('Upload error:', error);
             }
         }
 
@@ -495,9 +619,14 @@
             } catch (error) {
                 if (error.name === 'AbortError') {
                     answerText.textContent = 'Query cancelled.';
+                } else if (error.message.includes('Failed to fetch') || error.name === 'TypeError') {
+                    answerText.textContent = `Connection error: Cannot reach server. Please check:\n1. Server is running\n2. Correct URL (use ngrok URL if in Colab)\n3. Network connection\n\nCurrent API URL: ${API_BASE}`;
+                } else if (error.message.includes('timeout') || error.name === 'TimeoutError') {
+                    answerText.textContent = `Request timed out. Server may be slow or unresponsive.`;
                 } else {
                     answerText.textContent = `Error: ${error.message}`;
                 }
+                console.error('Query error:', error);
             } finally {
                 queryBtn.disabled = false;
                 queryInput.disabled = false;
