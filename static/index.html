@@ -386,14 +386,71 @@
             // Show current API URL in console
             console.log('🔗 Using API URL:', API_BASE);
             
+            // If accessing via localhost, immediately show warning
+            if (API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1')) {
+                showLocalhostWarning();
+            }
+            
             // Test connection on page load
             const connected = await testConnection();
             
             // If connection fails and we're using localhost, show prompt to set ngrok URL
-            if (!connected && API_BASE.includes('localhost')) {
+            if (!connected && (API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1'))) {
                 showApiUrlPrompt();
             }
         });
+        
+        // Show warning if accessing via localhost
+        function showLocalhostWarning() {
+            // Create a prominent banner at the top
+            const banner = document.createElement('div');
+            banner.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+                color: white;
+                padding: 20px;
+                z-index: 10000;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                text-align: center;
+                font-size: 16px;
+                font-weight: bold;
+            `;
+            banner.innerHTML = `
+                ⚠️ WARNING: You're accessing via localhost, which won't work in Colab!<br>
+                <span style="font-size: 14px; font-weight: normal; margin-top: 10px; display: block;">
+                    You MUST use the ngrok URL from your Colab notebook output.<br>
+                    Copy the ngrok URL and access the page using that URL instead, or click below to set it:
+                </span>
+                <button onclick="promptApiUrl()" style="
+                    margin-top: 15px;
+                    padding: 10px 20px;
+                    background: white;
+                    color: #ff6b6b;
+                    border: none;
+                    border-radius: 5px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    cursor: pointer;
+                ">Set ngrok URL Now</button>
+                <button onclick="this.parentElement.remove()" style="
+                    margin-left: 10px;
+                    padding: 10px 20px;
+                    background: rgba(255,255,255,0.2);
+                    color: white;
+                    border: 1px solid white;
+                    border-radius: 5px;
+                    font-size: 14px;
+                    cursor: pointer;
+                ">Dismiss</button>
+            `;
+            document.body.insertBefore(banner, document.body.firstChild);
+            
+            // Add padding to body to account for banner
+            document.body.style.paddingTop = '120px';
+        }
         
         // Function to prompt user for API URL if localhost fails
         function showApiUrlPrompt() {
@@ -414,13 +471,19 @@
         function promptApiUrl() {
             const currentUrl = API_BASE;
             const newUrl = prompt(
-                `Enter the API base URL (your ngrok URL):\n\nCurrent: ${currentUrl}\n\nExample: https://xxx.ngrok-free.dev`,
-                currentUrl
+                `Enter the API base URL (your ngrok URL from Colab):\n\nCurrent: ${currentUrl}\n\nExample: https://xxx.ngrok-free.dev\n\n⚠️ IMPORTANT: Use the ngrok URL, NOT localhost!`,
+                currentUrl.includes('localhost') ? 'https://' : currentUrl
             );
             
             if (newUrl && newUrl.trim()) {
                 // Remove trailing slash if present
-                const cleanUrl = newUrl.trim().replace(/\/$/, '');
+                let cleanUrl = newUrl.trim().replace(/\/$/, '');
+                
+                // Add https:// if missing
+                if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+                    cleanUrl = 'https://' + cleanUrl;
+                }
+                
                 API_BASE = cleanUrl;
                 localStorage.setItem('api_base_url', cleanUrl);
                 console.log('✅ API URL updated to:', cleanUrl);
@@ -430,8 +493,25 @@
                 newUrlObj.searchParams.set('api_url', cleanUrl);
                 window.history.replaceState({}, '', newUrlObj);
                 
+                // Remove localhost warning banner if present
+                const banner = document.querySelector('div[style*="background: linear-gradient(135deg, #ff6b6b"]');
+                if (banner) {
+                    banner.remove();
+                    document.body.style.paddingTop = '0';
+                }
+                
+                // Show success message
+                const uploadStatus = document.getElementById('uploadStatus');
+                if (uploadStatus) {
+                    uploadStatus.className = 'upload-status success';
+                    uploadStatus.style.display = 'block';
+                    uploadStatus.textContent = `✅ API URL set to: ${cleanUrl}. Testing connection...`;
+                }
+                
                 // Test connection again
-                testConnection();
+                setTimeout(() => {
+                    testConnection();
+                }, 500);
             }
         }
         
